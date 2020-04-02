@@ -82,6 +82,11 @@ type EngineConfig struct {
 	// Logger is used to provide an implementation for where the logging
 	// messages go for the runner.
 	Logger Logger
+
+	// MetricsGroups is an optional string that is used
+	// for the "group" label in the prometheus metrics that this
+	// engine exposes.
+	MetricsGroup string
 }
 
 // Validate returns an error if any field is invalid.
@@ -126,7 +131,8 @@ func NewEngine(config EngineConfig) (*Engine, error) {
 		return nil, errors.Annotatef(err, "invalid config")
 	}
 	engine := &Engine{
-		config: config,
+		config:  config,
+		metrics: createMetrics(),
 
 		manifolds:  Manifolds{},
 		dependents: map[string][]string{},
@@ -147,6 +153,10 @@ type Engine struct {
 
 	// config contains values passed in as config when the engine was created.
 	config EngineConfig
+
+	// metrics contains the various prometheus metrics that are exposed
+	// for the engine.
+	metrics *metrics
 
 	// As usual, we use tomb.Tomb to track the lifecycle and error state of the
 	// engine worker itself; but we *only* report *internal* errors via the tomb.
@@ -553,6 +563,7 @@ func (engine *Engine) gotStarted(name string, worker worker.Worker, resourceLog 
 		engine.config.Logger.Tracef("%q manifold worker no longer required", name)
 		worker.Kill()
 	default:
+		engine.metrics.WorkerStarts.WithLabelValues(engine.config.MetricsGroup, name).Inc()
 		// It's fine to use this worker; update info and copy back.
 		info.worker = worker
 		info.starting = false
